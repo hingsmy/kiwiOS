@@ -10,20 +10,22 @@ times 33 db 0
 start:
     jmp 0x7c0:step2
 
-handle_zero:
-    mov ah, 0eh
-    mov al, 'A'
-    mov bx, 0x00
-    int 0x10
-    iret 
+; AH = 02h
+; AL = number of sectors to read (must be nonzero)
+; CH = low eight bits of cylinder number
+; CL = sector number 1-63 (bits 0-5)
+; high two bits of cylinder (bits 6-7, hard disk only)
+; DH = head number
+; DL = drive number (bit 7 set for hard disk)
+; ES:BX -> data buffer
 
-handle_one:
-    mov ah, 0eh 
-    mov al, 'V'
-    mov bx, 0x00
-    int 0x10
-    iret
-
+; Return:
+; CF set on error
+; if AH = 11h (corrected ECC error), AL = burst length
+; CF clear if successful
+; AH = status (see #00234)
+; AL = number of sectors transferred (only valid if CF set for some
+; BIOSes)
 
 step2:
     cli ; Clear Interrupts
@@ -35,19 +37,23 @@ step2:
     mov sp, 0x7c00
     sti ; Enables Interrupts
 
-    mov word[ss:0x00], handle_zero
-    mov word[ss:0x02], 0x7c0
+    mov ah, 2 ; READ SECTOR COMMAND
+    mov al, 1 ; ONE SECTOR TO READ
+    mov ch, 0 ; Cylinder low eight bits
+    mov cl, 2 ; Read sector two
+    mov dh, 0 ; Head number
+    mov bx, buffer
+    int 0x13
+    jc error
 
-    ; mov ax, 0x00
-    ; div ax
-    ; int 0
-
-    mov word[ss:0x04], handle_one 
-    mov word[ss:0x06], 0x7c0
-    int 1
-
-    mov si, message
+    mov si, buffer 
+    call print 
+    
+    jmp $
+error:
+    mov si, error_message
     call print
+
     jmp $
 
 print: 
@@ -66,6 +72,9 @@ print_char:
     int 0x10
     ret
 
-message: db 'Hello World!', 0
+error_message: db 'Failed to load sector', 0
+
 times 510- ($ - $$) db 0
 dw 0xAA55
+
+buffer: 
